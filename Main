@@ -1,4 +1,6 @@
-NOTE: There are no comments due to letter limits in programmable blocks
+//NOTE: There are no comments due to letter limits in programmable blocks
+
+        List<TargetGrid> targettedGridList = new List<TargetGrid>();
 
         public Program()
         {
@@ -12,8 +14,35 @@ NOTE: There are no comments due to letter limits in programmable blocks
 
         public class TargetGrid
         {
-            public TargetGrid()
+            public Vector3D Position { get { return _position; } }
+            public Vector3D Velocity { get { return _velocity; } }
+            public Vector3D Acceleration { get { return _acceleration; } }
+
+            private Vector3D _position;
+            private Vector3D _velocity;
+            private Vector3D _acceleration;
+
+            public TargetGrid(MyDetectedEntityInfo raycastInfo)
             {
-                Vector
+                _position = raycastInfo.HitPosition.Value;
+                _position = raycastInfo.Velocity;
+                _acceleration = Vector3D.Zero;
+            }
+
+            public void RecalculatePosition(MyDetectedEntityInfo raycastInfo)
+            {
+                _acceleration = _velocity - raycastInfo.Velocity;
+                _velocity = raycastInfo.Velocity;
+                _position = raycastInfo.HitPosition.Value;
+            }
+
+            public Vector3D CalculateNewPosition()
+            {
+                double multiplier = 1 / 60;
+                Vector3D finalPosition;
+
+                finalPosition = _position + ((_velocity + (_acceleration * multiplier)) * multiplier);
+
+                return finalPosition;
             }
         }
