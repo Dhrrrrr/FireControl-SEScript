@@ -1,0 +1,27 @@
+Program()
+{
+  Get Required blocks
+  Check for available block
+}
+
+Runtime() 
+{
+  Check for incoming arguements
+
+  if(ARGUEMENT IS VECTOR3 / GPS)
+    Read info, then attach it to main
+
+  if(ARGUMENT IS SINGLE CAST)
+    Run a single raycast, get point and send to targetting
+
+  if(ARGUEMENT IS ACTIVE CAST)
+    Send out starting raycast
+
+    if(GRIDTRACKING IS ENABLED)
+      if(TARGET IS GRID)
+        Get acceleration of the grid, and attempt to track if with raycasts
+      else
+        Continue casting directly forward
+    else
+      Continue casting normally
+}
