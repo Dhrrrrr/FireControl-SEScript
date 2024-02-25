@@ -1,6 +1,9 @@
 //NOTE: There are no comments due to letter limits in programmable blocks
 
-        List<TargetGrid> targettedGridList = new List<TargetGrid>();
+        static bool trackGrids = false;
+        static double maxRange = 5000;
+
+        TargetGrid targettedGrid;
 
         IMyCameraBlock mainCamera;
         IMyCockpit cockpit;
@@ -10,6 +13,7 @@
         Vector3D currentTarget = Vector3D.Zero;
         Vector3D currentVelocity = Vector3D.Zero;
 
+        bool activelyTracking = false;
 
         public Program()
         {
@@ -24,16 +28,112 @@
 
             textPanel = GridTerminalSystem.GetBlockWithName("DAGGER Text Panel") as IMyTextPanel;
 
+            mainCamera.EnableRaycast = true;
 
             Runtime.UpdateFrequency = UpdateFrequency.Update1;
         }
 
         public void Main(string argument, UpdateType updateSource)
         {
+            switch (argument)
+            {
+                case "Clear":
+                    activelyTracking = false;
+                    ClearAllInfo();
+                    break;
+
+                case "Cast":
+                    CreateMainRaycast();
+                    break;
+
+                case "Track":
+                    activelyTracking = !activelyTracking;
+                    break;
+
+                default:
+                    CheckArgInput(argument);
+                    break;
+            }
+
             if (textPanel != null)
             {
                 WriteToTextPanel();
             }
+
+            Echo(activelyTracking.ToString());
+        }
+
+        public void ClearAllInfo()
+        {
+            currentTarget = Vector3D.Zero;
+            currentVelocity = Vector3D.Zero;
+            targettedGrid = null;
+        }
+
+        public void CreateMainRaycast()
+        {
+            MyDetectedEntityInfo rayInfo = mainCamera.Raycast(maxRange);
+
+            if (!rayInfo.IsEmpty())
+            {
+                if (trackGrids)
+                {
+                    if (rayInfo.Type == MyDetectedEntityType.LargeGrid || rayInfo.Type == MyDetectedEntityType.SmallGrid)
+                    {
+                        targettedGrid = new TargetGrid(rayInfo);
+                    }
+                    else
+                    {
+                        currentTarget = rayInfo.HitPosition.Value;
+                        currentVelocity = rayInfo.Velocity;
+                    }
+                }
+                else
+                {
+                    currentTarget = rayInfo.HitPosition.Value;
+                    currentVelocity = rayInfo.Velocity;
+                }
+            }
+        }
+
+        public void CheckArgInput(string input)
+        {
+            string[] splitString = input.Split(':');
+
+            try
+            {
+                if (splitString.Length == 4)
+                {
+                    string[] secondarySplit1 = splitString[1].Split(' ');
+                    string[] secondarySplit2 = splitString[2].Split(' ');
+                    string[] secondarySplit3 = splitString[3].Split(' ');
+
+                    double x = Convert.ToDouble(secondarySplit1[0]);
+                    double y = Convert.ToDouble(secondarySplit2[0]);
+                    double z = Convert.ToDouble(secondarySplit3[0]);
+
+                    activelyTracking = false;
+
+                    currentTarget = new Vector3D(x, y, z);
+                }
+                else if (splitString.Length == 7)
+                {
+                    double x = Convert.ToDouble(splitString[2]);
+                    double y = Convert.ToDouble(splitString[3]);
+                    double z = Convert.ToDouble(splitString[4]);
+
+                    activelyTracking = false;
+
+                    currentTarget = new Vector3D(x, y, z);
+                }
+            }
+            catch (Exception)
+            {
+
+            }
+
+
+
         }
 
         public void WriteToTextPanel()
@@ -80,5 +180,10 @@
                 finalPosition = _position + ((_velocity + (_acceleration * multiplier)) * multiplier);
 
                 return finalPosition;
+            }
+
+            public override string ToString()
+            {
+                return _position + "," + _velocity + "," + _acceleration;
             }
         }
