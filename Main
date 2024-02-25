@@ -1,6 +1,4 @@
-//NOTE: There are no comments due to letter limits in programmable blocks
-
-        static bool trackGrids = false;
+        static bool trackGrids = true;
         static double maxRange = 5000;
 
         TargetGrid targettedGrid;
@@ -14,6 +12,9 @@
         Vector3D currentVelocity = Vector3D.Zero;
 
         bool activelyTracking = false;
+        bool lostLock = false;
+
+        double carryover = 0;
 
         public Program()
         {
@@ -38,7 +39,6 @@
             switch (argument)
             {
                 case "Clear":
-                    activelyTracking = false;
                     ClearAllInfo();
                     break;
 
@@ -55,10 +55,23 @@
                     break;
             }
 
+            if (targettedGrid != null)
+            {
+                //targettedGrid.CalculateNewPosition();
+                //currentTarget = targettedGrid.Position;
+                //currentVelocity = targettedGrid.Position;
+            }
+
+            if (activelyTracking)
+            {
+                CreateTrackingRaycast();
+            }
+
             if (textPanel != null)
             {
                 WriteToTextPanel();
             }
+
 
             Echo(activelyTracking.ToString());
         }
@@ -81,17 +94,55 @@
                     if (rayInfo.Type == MyDetectedEntityType.LargeGrid || rayInfo.Type == MyDetectedEntityType.SmallGrid)
                     {
                         targettedGrid = new TargetGrid(rayInfo);
+                        currentTarget = targettedGrid.Position;
+                        currentVelocity = targettedGrid.Velocity;
                     }
                     else
                     {
                         currentTarget = rayInfo.HitPosition.Value;
                         currentVelocity = rayInfo.Velocity;
+                        targettedGrid = null;
                     }
                 }
                 else
                 {
                     currentTarget = rayInfo.HitPosition.Value;
                     currentVelocity = rayInfo.Velocity;
+                    targettedGrid = null;
+
+                }
+            }
+        }
+
+        public void CreateTrackingRaycast()
+        {
+            if (targettedGrid != null)
+            {
+                double distance = (targettedGrid.Position - mainCamera.WorldMatrix.Translation).Length();
+                carryover = distance;
+
+                if ((distance * 1.1) < mainCamera.AvailableScanRange)
+                {
+                    MyDetectedEntityInfo rayInfo = mainCamera.Raycast(targettedGrid.Position);
+
+                    if (!rayInfo.IsEmpty())
+                    {
+                        if (targettedGrid.id == rayInfo.EntityId)
+                        {
+                            targettedGrid.RecalculatePosition(rayInfo);
+
+                        }
+                        else
+                        {
+                            lostLock = true;
+                            targettedGrid = null;
+                        }
+                    }
+                    else
+                    {
+                        lostLock = true;
+                        targettedGrid = null;
+                    }
                 }
             }
         }
@@ -142,7 +193,15 @@
 
             mainText += "Target Position: " + currentTarget + Environment.NewLine;
             mainText += "Target Velocity: " + currentVelocity + Environment.NewLine;
+            mainText += "Tracking Enabled: " + activelyTracking + Environment.NewLine + Environment.NewLine;
 
+            if(targettedGrid != null)
+            {
+                mainText += "GRID TARGETTED" + Environment.NewLine;
+                mainText += "Relationship Status: " + targettedGrid.FriendlyStatus + Environment.NewLine;
+                mainText += "Name: " + targettedGrid.Name;
+            }
+            mainText += carryover;
             textPanel.FontColor = Color.Yellow;
 
             textPanel.WriteText(mainText); 
@@ -157,19 +216,25 @@
             private Vector3D _position;
             private Vector3D _velocity;
             private Vector3D _acceleration;
+            public MyRelationsBetweenPlayerAndBlock FriendlyStatus;
+            public string Name;
+            public long id;
 
             public TargetGrid(MyDetectedEntityInfo raycastInfo)
             {
-                _position = raycastInfo.HitPosition.Value;
-                _position = raycastInfo.Velocity;
+                _position = raycastInfo.Position;
+                _velocity = raycastInfo.Velocity;
                 _acceleration = Vector3D.Zero;
+                Name = raycastInfo.Name;
+                FriendlyStatus = raycastInfo.Relationship;
+                id = raycastInfo.EntityId;
             }
 
             public void RecalculatePosition(MyDetectedEntityInfo raycastInfo)
             {
                 _acceleration = _velocity - raycastInfo.Velocity;
                 _velocity = raycastInfo.Velocity;
-                _position = raycastInfo.HitPosition.Value;
+                _position = raycastInfo.Position;
             }
 
             public Vector3D CalculateNewPosition()
