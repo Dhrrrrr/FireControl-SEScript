@@ -3,7 +3,7 @@ It will be in its own programmable block:
 
 Features:
 Tracking ability for both moving and stationary targets
-It can: Active track, singular point track, get points from GPS or Vector3 coordinates put into the main prompt
+It can: Active track, singular point locating, get points from GPS or Vector3 coordinates put into the main prompt
 It will be able to use multiple cameras to speed up raycasting
 Be able to get targetting information from intergrid communication with other allied DAGGER points as long as it is enabled on both
 
@@ -14,3 +14,16 @@ Output targetting info onto a text panel for quicker advanced info pull for user
 Usage:
 This will be its own operation script that ONLY handles targetting.
 Other scripts will automatically locate this script on the grid and automatically get its info
+
+
+
+
+
+Achievement List:
+Tracking Ability
+#Singular Point from camera
+#GPS and Vector3 Input
+Multiple camera usage
+Intergrid communication
+#Customisable max Range
+#Textpanel output
