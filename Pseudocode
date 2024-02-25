@@ -24,4 +24,12 @@ Runtime()
         Continue casting directly forward
     else
       Continue casting normally
+
+  if(TEXTPANEL EXISTS)
+    Print info to textpanel
+
+  if(TRACKING A GRID)
+    Raycast towards its predicted location, use multiple cameras for this as well
+
+  Print targetting info out
 }
