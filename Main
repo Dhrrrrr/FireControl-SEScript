@@ -2,14 +2,50 @@
 
         List<TargetGrid> targettedGridList = new List<TargetGrid>();
 
+        IMyCameraBlock mainCamera;
+        IMyCockpit cockpit;
+
+        IMyTextPanel textPanel;
+
+        Vector3D currentTarget = Vector3D.Zero;
+        Vector3D currentVelocity = Vector3D.Zero;
+
+
         public Program()
         {
+            mainCamera = GridTerminalSystem.GetBlockWithName("DAGGER Targetting Cam") as IMyCameraBlock;
+            cockpit = GridTerminalSystem.GetBlockWithName("Control Seat") as IMyCockpit;
 
+            if (mainCamera == null || cockpit == null)
+            {
+                Echo("Missing Essential Blocks");
+                return;
+            }
+
+            textPanel = GridTerminalSystem.GetBlockWithName("DAGGER Text Panel") as IMyTextPanel;
+
+
+            Runtime.UpdateFrequency = UpdateFrequency.Update1;
         }
 
         public void Main(string argument, UpdateType updateSource)
         {
+            if (textPanel != null)
+            {
+                WriteToTextPanel();
+            }
+        }
 
+        public void WriteToTextPanel()
+        {
+            string mainText = "";
+
+            mainText += "Target Position: " + currentTarget + Environment.NewLine;
+            mainText += "Target Velocity: " + currentVelocity + Environment.NewLine;
+
+            textPanel.FontColor = Color.Yellow;
+
+            textPanel.WriteText(mainText); 
         }
 
         public class TargetGrid
