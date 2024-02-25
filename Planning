@@ -26,4 +26,5 @@ Tracking Ability
 Multiple camera usage
 Intergrid communication
 #Customisable max Range
-#Textpanel output
+#Textpanel output 
+  #Add grid info from targetting in textpanel
