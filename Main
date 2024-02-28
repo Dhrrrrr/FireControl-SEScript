@@ -57,9 +57,9 @@
 
             if (targettedGrid != null)
             {
-                //targettedGrid.CalculateNewPosition();
-                //currentTarget = targettedGrid.Position;
-                //currentVelocity = targettedGrid.Position;
+                targettedGrid.CalculateNewPosition();
+                currentTarget = targettedGrid.Position;
+                currentVelocity = targettedGrid.Velocity;
             }
 
             if (activelyTracking)
@@ -72,8 +72,9 @@
                 WriteToTextPanel();
             }
 
-
             Echo(activelyTracking.ToString());
+
+            Me.CustomData = "DAGGER" + "|" + currentTarget + "," + currentVelocity;
         }
 
         public void ClearAllInfo()
