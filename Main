@@ -1,255 +1,143 @@
-        static bool trackGrids = true;
-        static double maxRange = 5000;
-
-        TargetGrid targettedGrid;
-
-        IMyCameraBlock mainCamera;
-        IMyCockpit cockpit;
-
         IMyTextPanel textPanel;
+        IMyProgrammableBlock DAGGER;
 
-        Vector3D currentTarget = Vector3D.Zero;
-        Vector3D currentVelocity = Vector3D.Zero;
 
-        bool activelyTracking = false;
-        bool lostLock = false;
+        OperationalControlStruct MainControls = new OperationalControlStruct();
 
-        double carryover = 0;
+        Vector3D targettingLocation;
 
         public Program()
         {
-            mainCamera = GridTerminalSystem.GetBlockWithName("DAGGER Targetting Cam") as IMyCameraBlock;
-            cockpit = GridTerminalSystem.GetBlockWithName("Control Seat") as IMyCockpit;
+            IMyMotorStator startAzimuth = GridTerminalSystem.GetBlockWithName("Azimuth Rotor") as IMyMotorStator;
+            IMyMotorStator startVertical = GridTerminalSystem.GetBlockWithName("Vertical Rotor") as IMyMotorStator;
+            IMyFunctionalBlock relativeBlock = GridTerminalSystem.GetBlockWithName("Direction Block") as IMyFunctionalBlock;
 
-            if (mainCamera == null || cockpit == null)
+            targettingLocation = Vector3D.Zero;
+
+            if (startAzimuth != null && startVertical != null && relativeBlock != null)
             {
-                Echo("Missing Essential Blocks");
+                MainControls.Initialise(startAzimuth, startVertical, relativeBlock);
+            }
+            else
+            {
+                Echo("Missing Blocks");
                 return;
             }
 
-            textPanel = GridTerminalSystem.GetBlockWithName("DAGGER Text Panel") as IMyTextPanel;
+            textPanel = GridTerminalSystem.GetBlockWithName("Text Panel") as IMyTextPanel;
 
-            mainCamera.EnableRaycast = true;
+            List<IMyProgrammableBlock> progBlock = new List<IMyProgrammableBlock>();
+            GridTerminalSystem.GetBlocksOfType<IMyProgrammableBlock>(progBlock);
+
+            foreach (var block in progBlock)
+            {
+                string[] splitString = block.CustomData.Split('|');
+
+                if (splitString[0] == "DAGGER")
+                {
+                    DAGGER = block;
+                    break;
+                }
+            }
+
+            if (DAGGER == null)
+            {
+                Echo("Failed to locate targetting system");
+                return;
+            }
 
             Runtime.UpdateFrequency = UpdateFrequency.Update1;
         }
 
         public void Main(string argument, UpdateType updateSource)
         {
+            string[] DAGGERMainSplit = DAGGER.CustomData.Split('|');
+
+            if (DAGGERMainSplit.Length == 2)
+            {
+                string[] DAGGERInfoSplit = DAGGERMainSplit[1].Split(',');
+
+                try
+                {
+                    string[] splitString = DAGGERInfoSplit[0].Split(':');
+
+                    if (splitString.Length == 4)
+                    {
+                        string[] secondarySplit1 = splitString[1].Split(' ');
+                        string[] secondarySplit2 = splitString[2].Split(' ');
+                        string[] secondarySplit3 = splitString[3].Split(' ');
+
+                        double x = Convert.ToDouble(secondarySplit1[0]);
+                        double y = Convert.ToDouble(secondarySplit2[0]);
+                        double z = Convert.ToDouble(secondarySplit3[0]);
+
+                        targettingLocation = new Vector3D(x, y, z);
+                    }
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+            }
+
+
+
             switch (argument)
             {
-                case "Clear":
-                    ClearAllInfo();
-                    break;
+                case "Switch":
 
-                case "Cast":
-                    CreateMainRaycast();
-                    break;
+                    if (MainControls.enabled)
+                    {
+                        MainControls.StopMovement();
+                    }
 
-                case "Track":
-                    activelyTracking = !activelyTracking;
+                    MainControls.enabled = !MainControls.enabled;
+
                     break;
 
                 default:
-                    CheckArgInput(argument);
+                    if (MainControls.enabled)
+                    {
+                        MainControls.SetSystemSpeed();
+                    }
                     break;
             }
 
-            if (targettedGrid != null)
-            {
-                targettedGrid.CalculateNewPosition();
-                currentTarget = targettedGrid.Position;
-                currentVelocity = targettedGrid.Velocity;
-            }
 
-            if (activelyTracking)
-            {
-                CreateTrackingRaycast();
-            }
-
-            if (textPanel != null)
-            {
-                WriteToTextPanel();
-            }
-
-            Echo(activelyTracking.ToString());
-
-            Me.CustomData = "DAGGER" + "|" + currentTarget + "," + currentVelocity;
+            textPanel.WriteText(MainControls.azimuthRotation + "," + MainControls.verticalRotation + "," + MainControls.enabled + Environment.NewLine + targettingLocation);
         }
 
-        public void ClearAllInfo()
+        public struct OperationalControlStruct
         {
-            currentTarget = Vector3D.Zero;
-            currentVelocity = Vector3D.Zero;
-            targettedGrid = null;
-        }
+            public IMyMotorStator azimuth;
+            public IMyMotorStator vertical;
+            public IMyFunctionalBlock direction;
+            public bool enabled;
 
-        public void CreateMainRaycast()
-        {
-            MyDetectedEntityInfo rayInfo = mainCamera.Raycast(maxRange);
+            public float azimuthRotation { get; set; }
+            public float verticalRotation { get; set; }
 
-            if (!rayInfo.IsEmpty())
+            public void Initialise(IMyMotorStator azimuthIns, IMyMotorStator verticalIns, IMyFunctionalBlock directionalBlock)
             {
-                if (trackGrids)
-                {
-                    if (rayInfo.Type == MyDetectedEntityType.LargeGrid || rayInfo.Type == MyDetectedEntityType.SmallGrid)
-                    {
-                        targettedGrid = new TargetGrid(rayInfo);
-                        currentTarget = targettedGrid.Position;
-                        currentVelocity = targettedGrid.Velocity;
-                    }
-                    else
-                    {
-                        currentTarget = rayInfo.HitPosition.Value;
-                        currentVelocity = rayInfo.Velocity;
-                        targettedGrid = null;
-                    }
-                }
-                else
-                {
-                    currentTarget = rayInfo.HitPosition.Value;
-                    currentVelocity = rayInfo.Velocity;
-                    targettedGrid = null;
+                azimuthRotation = 4;
+                verticalRotation = 0;
 
-                }
+                azimuth = azimuthIns;
+                vertical = verticalIns;
+                direction = directionalBlock;
+                enabled = false;
             }
-        }
-
-        public void CreateTrackingRaycast()
-        {
-            if (targettedGrid != null)
+            public void SetSystemSpeed()
             {
-                double distance = (targettedGrid.Position - mainCamera.WorldMatrix.Translation).Length();
-                carryover = distance;
-
-                if ((distance * 1.1) < mainCamera.AvailableScanRange)
-                {
-                    MyDetectedEntityInfo rayInfo = mainCamera.Raycast(targettedGrid.Position);
-
-                    if (!rayInfo.IsEmpty())
-                    {
-                        if (targettedGrid.id == rayInfo.EntityId)
-                        {
-                            targettedGrid.RecalculatePosition(rayInfo);
-
-                        }
-                        else
-                        {
-                            lostLock = true;
-                            targettedGrid = null;
-                        }
-                    }
-                    else
-                    {
-                        lostLock = true;
-                        targettedGrid = null;
-                    }
-                }
-            }
-        }
-
-        public void CheckArgInput(string input)
-        {
-            string[] splitString = input.Split(':');
-
-            try
-            {
-                if (splitString.Length == 4)
-                {
-                    string[] secondarySplit1 = splitString[1].Split(' ');
-                    string[] secondarySplit2 = splitString[2].Split(' ');
-                    string[] secondarySplit3 = splitString[3].Split(' ');
-
-                    double x = Convert.ToDouble(secondarySplit1[0]);
-                    double y = Convert.ToDouble(secondarySplit2[0]);
-                    double z = Convert.ToDouble(secondarySplit3[0]);
-
-                    activelyTracking = false;
-
-                    currentTarget = new Vector3D(x, y, z);
-                }
-                else if (splitString.Length == 7)
-                {
-                    double x = Convert.ToDouble(splitString[2]);
-                    double y = Convert.ToDouble(splitString[3]);
-                    double z = Convert.ToDouble(splitString[4]);
-
-                    activelyTracking = false;
-
-                    currentTarget = new Vector3D(x, y, z);
-                }
-            }
-            catch (Exception)
-            {
-
+                azimuth.TargetVelocityRPM = azimuthRotation;
+                vertical.TargetVelocityRPM = verticalRotation;
             }
 
-
-
-        }
-
-        public void WriteToTextPanel()
-        {
-            string mainText = "";
-
-            mainText += "Target Position: " + currentTarget + Environment.NewLine;
-            mainText += "Target Velocity: " + currentVelocity + Environment.NewLine;
-            mainText += "Tracking Enabled: " + activelyTracking + Environment.NewLine + Environment.NewLine;
-
-            if(targettedGrid != null)
+            public void StopMovement()
             {
-                mainText += "GRID TARGETTED" + Environment.NewLine;
-                mainText += "Relationship Status: " + targettedGrid.FriendlyStatus + Environment.NewLine;
-                mainText += "Name: " + targettedGrid.Name;
-            }
-            mainText += carryover;
-            textPanel.FontColor = Color.Yellow;
+                azimuthRotation = 0;
+                verticalRotation = 0;
 
-            textPanel.WriteText(mainText); 
-        }
-
-        public class TargetGrid
-        {
-            public Vector3D Position { get { return _position; } }
-            public Vector3D Velocity { get { return _velocity; } }
-            public Vector3D Acceleration { get { return _acceleration; } }
-
-            private Vector3D _position;
-            private Vector3D _velocity;
-            private Vector3D _acceleration;
-            public MyRelationsBetweenPlayerAndBlock FriendlyStatus;
-            public string Name;
-            public long id;
-
-            public TargetGrid(MyDetectedEntityInfo raycastInfo)
-            {
-                _position = raycastInfo.Position;
-                _velocity = raycastInfo.Velocity;
-                _acceleration = Vector3D.Zero;
-                Name = raycastInfo.Name;
-                FriendlyStatus = raycastInfo.Relationship;
-                id = raycastInfo.EntityId;
-            }
-
-            public void RecalculatePosition(MyDetectedEntityInfo raycastInfo)
-            {
-                _acceleration = _velocity - raycastInfo.Velocity;
-                _velocity = raycastInfo.Velocity;
-                _position = raycastInfo.Position;
-            }
-
-            public Vector3D CalculateNewPosition()
-            {
-                double multiplier = 1 / 60;
-                Vector3D finalPosition;
-
-                finalPosition = _position + ((_velocity + (_acceleration * multiplier)) * multiplier);
-
-                return finalPosition;
-            }
-
-            public override string ToString()
-            {
-                return _position + "," + _velocity + "," + _acceleration;
+                SetSystemSpeed();
             }
         }
