@@ -1,34 +1,49 @@
         static bool trackGrids = true;
         static double maxRange = 5000;
 
+        const float extraRange = 1.1f;
+        const bool useAcceleration = false;
+        const bool useHitPosition = true;
+
+        // Current targetted grid -- To be overhauled
         TargetGrid targettedGrid;
 
+        // Mandatory Block variables
         IMyCameraBlock mainCamera;
         IMyCockpit cockpit;
 
+        // Optional block
         IMyTextPanel textPanel;
+        List<IMyCameraBlock> extraCamList = new List<IMyCameraBlock>();
 
+        // Target info
         Vector3D currentTarget = Vector3D.Zero;
         Vector3D currentVelocity = Vector3D.Zero;
 
+        // Extra variables
         bool activelyTracking = false;
         bool lostLock = false;
 
-        double carryover = 0;
+        // time for single tick
+        const double singleTickMutlipler = 1 / 60;
 
         public Program()
         {
+            // Pull mandatory blocks
             mainCamera = GridTerminalSystem.GetBlockWithName("DAGGER Targetting Cam") as IMyCameraBlock;
             cockpit = GridTerminalSystem.GetBlockWithName("Control Seat") as IMyCockpit;
 
+            // Check for errors
             if (mainCamera == null || cockpit == null)
             {
                 Echo("Missing Essential Blocks");
                 return;
             }
 
+            // Get textpanel if it exists
             textPanel = GridTerminalSystem.GetBlockWithName("DAGGER Text Panel") as IMyTextPanel;
 
+            // Enable raycasting
             mainCamera.EnableRaycast = true;
 
             Runtime.UpdateFrequency = UpdateFrequency.Update1;
@@ -36,6 +51,7 @@
 
         public void Main(string argument, UpdateType updateSource)
         {
+            // Check for incoming arguments
             switch (argument)
             {
                 case "Clear":
@@ -55,28 +71,37 @@
                     break;
             }
 
-            if (targettedGrid != null)
-            {
-                targettedGrid.CalculateNewPosition();
-                currentTarget = targettedGrid.Position;
-                currentVelocity = targettedGrid.Velocity;
-            }
-
+            // Check if active tracking is on, and attempt to track a grid if one exists
             if (activelyTracking)
             {
                 CreateTrackingRaycast();
+
+                // Update grid info
+                if (targettedGrid != null)
+                {
+                    targettedGrid.CalculateVelocity();
+                    
+                    currentTarget = targettedGrid.Position;
+                    currentVelocity = targettedGrid.Velocity;
+                }
             }
 
+            // Write to textpanel if one exists
             if (textPanel != null)
             {
                 WriteToTextPanel();
             }
 
+            // Echo the tracking variable so the user can quickly tell if tracking is enabled
             Echo(activelyTracking.ToString());
 
+            // Print info to custom data for other objects to use
             Me.CustomData = "DAGGER" + "|" + currentTarget + "," + currentVelocity;
         }
 
+        /// <summary>
+        /// Clears main variables
+        /// </summary>
         public void ClearAllInfo()
         {
             currentTarget = Vector3D.Zero;
@@ -84,70 +109,79 @@
             targettedGrid = null;
         }
 
+        /// <summary>
+        /// Create a starting raycast, either for single or first of a track
+        /// </summary>
         public void CreateMainRaycast()
         {
+            // Create raycast in straight direction
             MyDetectedEntityInfo rayInfo = mainCamera.Raycast(maxRange);
 
+            // Check if there was a hit
             if (!rayInfo.IsEmpty())
             {
+
+                // If grid tracking is enabled
                 if (trackGrids)
                 {
+                    //If enabled and the target hit is a grid, then create new target grid
                     if (rayInfo.Type == MyDetectedEntityType.LargeGrid || rayInfo.Type == MyDetectedEntityType.SmallGrid)
                     {
-                        targettedGrid = new TargetGrid(rayInfo);
+                        targettedGrid = new TargetGrid(rayInfo, useAcceleration, useHitPosition);
                         currentTarget = targettedGrid.Position;
                         currentVelocity = targettedGrid.Velocity;
-                    }
-                    else
-                    {
-                        currentTarget = rayInfo.HitPosition.Value;
-                        currentVelocity = rayInfo.Velocity;
-                        targettedGrid = null;
-                    }
-                }
-                else
-                {
-                    currentTarget = rayInfo.HitPosition.Value;
-                    currentVelocity = rayInfo.Velocity;
-                    targettedGrid = null;
 
+                        // End the method before inserting standard info
+                        return;
+                    }
                 }
+
+                // Standard hit position location
+                currentTarget = rayInfo.HitPosition.Value;
+                currentVelocity = rayInfo.Velocity;
+                targettedGrid = null;
             }
         }
 
+        /// <summary>
+        /// Creates a raycast that attempts to use the location of a targetted grid if one exists
+        /// </summary>
         public void CreateTrackingRaycast()
         {
+            // Check existance of grid
             if (targettedGrid != null)
             {
+                // Get distance from target
                 double distance = (targettedGrid.Position - mainCamera.WorldMatrix.Translation).Length();
-                carryover = distance;
 
-                if ((distance * 1.1) < mainCamera.AvailableScanRange)
+                // Use extra range in case target is out of range, and only send out the raycast if there is avaiable length
+                if ((distance * extraRange) < mainCamera.AvailableScanRange)
                 {
+                    // Send raycast to position
                     MyDetectedEntityInfo rayInfo = mainCamera.Raycast(targettedGrid.Position);
 
+                    // If the raycast hit the current targetted grid, recalculate its position with new info, and return;
                     if (!rayInfo.IsEmpty())
                     {
                         if (targettedGrid.id == rayInfo.EntityId)
                         {
                             targettedGrid.RecalculatePosition(rayInfo);
 
-                        }
-                        else
-                        {
-                            lostLock = true;
-                            targettedGrid = null;
+                            return;
                         }
                     }
-                    else
-                    {
-                        lostLock = true;
-                        targettedGrid = null;
-                    }
+
+                    // Call lost lock if the grid wasn't relocated
+                    lostLock = true;
+                    targettedGrid = null;
                 }
             }
         }
 
+        /// <summary>
+        /// Get raw input from argument and check if its important info such as GPS or Vector3 and parse it
+        /// </summary>
+        /// <param name="input">Argument input</param>
         public void CheckArgInput(string input)
         {
             string[] splitString = input.Split(':');
@@ -188,6 +222,9 @@
 
         }
 
+        /// <summary>
+        /// Write relevant info into text panel with styling
+        /// </summary>
         public void WriteToTextPanel()
         {
             string mainText = "";
@@ -202,52 +239,91 @@
                 mainText += "Relationship Status: " + targettedGrid.FriendlyStatus + Environment.NewLine;
                 mainText += "Name: " + targettedGrid.Name;
             }
-            mainText += carryover;
+
             textPanel.FontColor = Color.Yellow;
 
             textPanel.WriteText(mainText); 
         }
-
+        
+        /// <summary>
+        /// Class for a target object grid, used for tracking targets
+        /// </summary>
         public class TargetGrid
         {
-            public Vector3D Position { get { return _position; } }
-            public Vector3D Velocity { get { return _velocity; } }
-            public Vector3D Acceleration { get { return _acceleration; } }
+            // Pull vars
+            public Vector3D Position { get { return _position; } set { _position = value; } }
+            public Vector3D Velocity { get { return _velocity; } set { _velocity = value; } }
+            public Vector3D Acceleration { get { return _acceleration; } set { _acceleration = value; } }
 
+            // Interals
             private Vector3D _position;
             private Vector3D _velocity;
             private Vector3D _acceleration;
+
+            // Name of the grid, relationship status and id for checking
             public MyRelationsBetweenPlayerAndBlock FriendlyStatus;
             public string Name;
             public long id;
 
-            public TargetGrid(MyDetectedEntityInfo raycastInfo)
+            // Optional variables for targetting
+            private bool useAcceleration;
+            private bool useHitposition;
+
+            /// <summary>
+            /// Generate a new targetted grid
+            /// </summary>
+            /// <param name="raycastInfo">Raycast hit for the targetted grid to pull info from</param>
+            public TargetGrid(MyDetectedEntityInfo raycastInfo, bool accelerationEnabled, bool hitpositionEnabled)
             {
                 _position = raycastInfo.Position;
                 _velocity = raycastInfo.Velocity;
                 _acceleration = Vector3D.Zero;
+
                 Name = raycastInfo.Name;
                 FriendlyStatus = raycastInfo.Relationship;
                 id = raycastInfo.EntityId;
+
+                useAcceleration = accelerationEnabled;
+                useHitposition = hitpositionEnabled;
             }
 
+            /// <summary>
+            /// Uses updated raycast info to update internal tracking
+            /// </summary>
+            /// <param name="raycastInfo">Ray info input</param>
             public void RecalculatePosition(MyDetectedEntityInfo raycastInfo)
             {
-                _acceleration = _velocity - raycastInfo.Velocity;
+                // Only update acceleration if its enabled
+                if (useAcceleration)
+                {
+                    _acceleration = _velocity - raycastInfo.Velocity;
+
+                }
+
                 _velocity = raycastInfo.Velocity;
                 _position = raycastInfo.Position;
             }
 
-            public Vector3D CalculateNewPosition()
+            /// <summary>
+            /// Calculates new position using velocity and acceleration, with tick amount
+            /// </summary>
+            public void CalculateVelocity()
             {
-                double multiplier = 1 / 60;
-                Vector3D finalPosition;
+                double multiplier = 60;
 
-                finalPosition = _position + ((_velocity + (_acceleration * multiplier)) * multiplier);
+                // Check if acceleration usage is on
+                if (useAcceleration)
+                {
+                    _velocity += new Vector3D(_acceleration.X / multiplier, _acceleration.Y / multiplier, _acceleration.Z / multiplier);
+                }
 
-                return finalPosition;
+                _position += new Vector3D(_velocity.X / multiplier, _velocity.Y / multiplier, _velocity.Z / multiplier); ;
             }
 
+            /// <summary>
+            /// Generate string for grid target
+            /// </summary>
+            /// <returns></returns>
             public override string ToString()
             {
                 return _position + "," + _velocity + "," + _acceleration;
