@@ -1,9 +1,19 @@
+        // Config
+
+        // Main
         static bool trackGrids = true;
         static double maxRange = 5000;
 
         const float extraRange = 1.1f;
         const bool useAcceleration = false;
         const bool useHitPosition = true;
+
+        // Block Names
+        const string camName = "DAGGER Targetting Cam";
+        const string cockpitName = "Control Seat";
+        const string textpanelName = "DAGGER Text Panel";
+
+        const string cameraGroupName = "Targetting Cams";
 
         // Current targetted grid -- To be overhauled
         TargetGrid targettedGrid;
@@ -24,14 +34,17 @@
         bool activelyTracking = false;
         bool lostLock = false;
 
+        // Used for timing multiple cams
+        int ticksSinceLastCast = 0;
+
         // time for single tick
         const double singleTickMutlipler = 1 / 60;
 
         public Program()
         {
             // Pull mandatory blocks
-            mainCamera = GridTerminalSystem.GetBlockWithName("DAGGER Targetting Cam") as IMyCameraBlock;
-            cockpit = GridTerminalSystem.GetBlockWithName("Control Seat") as IMyCockpit;
+            mainCamera = GridTerminalSystem.GetBlockWithName(camName) as IMyCameraBlock;
+            cockpit = GridTerminalSystem.GetBlockWithName(cockpitName) as IMyCockpit;
 
             // Check for errors
             if (mainCamera == null || cockpit == null)
@@ -40,11 +53,24 @@
                 return;
             }
 
-            // Get textpanel if it exists
-            textPanel = GridTerminalSystem.GetBlockWithName("DAGGER Text Panel") as IMyTextPanel;
+            // Get optionals if they exists
+            textPanel = GridTerminalSystem.GetBlockWithName(textpanelName) as IMyTextPanel;
+
+            IMyBlockGroup camGroup = GridTerminalSystem.GetBlockGroupWithName(cameraGroupName);
+
+            if (camGroup != null)
+            {
+                camGroup.GetBlocksOfType(extraCamList);
+
+            }
+
+            extraCamList.Add(mainCamera);
 
             // Enable raycasting
-            mainCamera.EnableRaycast = true;
+            foreach (var camera in extraCamList)
+            {
+                camera.EnableRaycast = true;
+            }
 
             Runtime.UpdateFrequency = UpdateFrequency.Update1;
         }
@@ -84,6 +110,10 @@
                     currentTarget = targettedGrid.Position;
                     currentVelocity = targettedGrid.Velocity;
                 }
+            } // Purge targetted grid if still existing
+            else if (targettedGrid != null)
+            {
+                targettedGrid = null;
             }
 
             // Write to textpanel if one exists
@@ -116,7 +146,7 @@
         {
             // Create raycast in straight direction
             MyDetectedEntityInfo rayInfo = mainCamera.Raycast(maxRange);
-
+            
             // Check if there was a hit
             if (!rayInfo.IsEmpty())
             {
@@ -152,29 +182,127 @@
             if (targettedGrid != null)
             {
                 // Get distance from target
-                double distance = (targettedGrid.Position - mainCamera.WorldMatrix.Translation).Length();
+                Vector3D direction = targettedGrid.Position - mainCamera.WorldMatrix.Translation;
+                double distance = direction.Length() * extraRange;
+                float rayCone = mainCamera.RaycastConeLimit;
 
-                // Use extra range in case target is out of range, and only send out the raycast if there is avaiable length
-                if ((distance * extraRange) < mainCamera.AvailableScanRange)
+                // if goes over max distance then break
+                if (distance > maxRange)
                 {
-                    // Send raycast to position
-                    MyDetectedEntityInfo rayInfo = mainCamera.Raycast(targettedGrid.Position);
+                    return;
+                }
 
-                    // If the raycast hit the current targetted grid, recalculate its position with new info, and return;
-                    if (!rayInfo.IsEmpty())
+                // Check if cam list exists
+                if (extraCamList.Count > 1)
+                {
+                    // Count the amount of cameras available to cast the location, and save them for use
+                    int availableCamCount = 0;
+                    List<IMyCameraBlock> availableCams = new List<IMyCameraBlock>();
+
+                    foreach (var camera in extraCamList)
                     {
-                        if (targettedGrid.id == rayInfo.EntityId)
+                        if (CheckCamDetectionAbility(camera, direction.Normalized(), rayCone))
                         {
-                            targettedGrid.RecalculatePosition(rayInfo);
+                            availableCamCount += 1;
+                            availableCams.Add(camera);
+                        }
+                    }
 
+                    // Get ticks till next targetting
+                    float metresPerTick = mainCamera.RaycastTimeMultiplier * (1000 / 60) * availableCamCount;
+                    int ticksTillCast = (int)Math.Ceiling(distance / metresPerTick);
+
+                    // Check if a cast should be run, if not add to next tick
+                    if (ticksSinceLastCast >= ticksTillCast)
+                    {
+                        bool sentRay = false; 
+
+                        // Find an available camera to cast with and send point
+                        foreach (var camera in availableCams)
+                        {
+                            if (camera.CanScan(distance))
+                            {
+                                RunTargettingCast(camera, targettedGrid.Position);
+                                sentRay = true;
+                                break;
+                            }
+                        }
+
+                        if (sentRay)
+                        {
+                            ticksSinceLastCast = 0;
                             return;
                         }
                     }
 
-                    // Call lost lock if the grid wasn't relocated
-                    lostLock = true;
-                    targettedGrid = null;
+                    // Add a tick till cast if no ray was sent
+                    ticksSinceLastCast += 1;                
                 }
+                else
+                {
+                    // Use extra range in case target is out of range, and only send out the raycast if there is avaiable length
+                    if (mainCamera.CanScan(distance))
+                    {
+                        RunTargettingCast(mainCamera, targettedGrid.Position);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Runs a targetting cast
+        /// </summary>
+        /// <param name="cam">Camera to cast with</param>
+        /// <param name="point">Point of target</param>
+        public void RunTargettingCast(IMyCameraBlock cam, Vector3D point)
+        {
+            // Send raycast to position
+            MyDetectedEntityInfo rayInfo = cam.Raycast(point);
+
+            // If the raycast hit the current targetted grid, recalculate its position with new info, and return;
+            if (!rayInfo.IsEmpty())
+            {
+                if (targettedGrid.id == rayInfo.EntityId)
+                {
+                    targettedGrid.RecalculatePosition(rayInfo);
+
+                    return;
+                }
+            }
+
+            // Call lost lock if the grid wasn't relocated
+            lostLock = true;
+            targettedGrid = null;
+        }
+
+        /// <summary>
+        /// Checks if the camera is able to cast a ray to the point
+        /// </summary>
+        /// <param name="cam">Camera to check</param>
+        /// <param name="direction">Direction to object</param>
+        /// <returns></returns>
+        public bool CheckCamDetectionAbility(IMyCameraBlock cam, Vector3D direction, float maxAngle)
+        {
+            // Get direction vectors
+            Vector3D forward = cam.WorldMatrix.Forward;
+            Vector3D left = cam.WorldMatrix.Left;
+            Vector3D down = cam.WorldMatrix.Down;
+
+            // Project to plane and get angles
+            Vector3D xz = ProjectVectorToPlane(forward, left, direction);
+            Vector3D xy = ProjectVectorToPlane(forward, down, direction);
+
+            float angleXZ = CalcAngleBetweenVec(forward, xz);
+            float angleXY = CalcAngleBetweenVec(forward, xy);
+
+            // Check and return
+            if (angleXZ < maxAngle && angleXY < maxAngle)
+            {
+                return true;
+            }
+            else
+            {
+                return false;
             }
         }
 
@@ -244,7 +372,33 @@
 
             textPanel.WriteText(mainText); 
         }
-        
+
+        /// <summary>
+        /// Calculate the difference in degrees between two vectors
+        /// </summary>
+        /// <param name="a">First direction vector</param>
+        /// <param name="b">Second direction vector</param>
+        /// <returns></returns>
+        public float CalcAngleBetweenVec(Vector3D a, Vector3D b)
+        {
+            return (float)MathHelper.ToDegrees(Math.Acos(MathHelper.Clamp(a.Dot(b) / Math.Sqrt(a.LengthSquared() * b.LengthSquared()), -1, 1)));
+        }
+
+        /// <summary>
+        /// Projects a 3D vector onto a 2D vector plane/circle using two crossed vectors as its guide
+        /// </summary>
+        /// <param name="x">First cross vector</param>
+        /// <param name="y">Second cross vector</param>
+        /// <param name="projectedVector">Vector being projected onto plane</param>
+        /// <returns></returns>
+        public Vector3D ProjectVectorToPlane(Vector3D x, Vector3D y, Vector3D projectedVector)
+        {
+            Vector3D xVec = Vector3D.ProjectOnVector(ref projectedVector, ref x);
+            Vector3D yVec = Vector3D.ProjectOnVector(ref projectedVector, ref y);
+
+            return xVec + yVec;
+        }
+
         /// <summary>
         /// Class for a target object grid, used for tracking targets
         /// </summary>
