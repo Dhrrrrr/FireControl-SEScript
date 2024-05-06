@@ -9,9 +9,9 @@
         const bool useHitPosition = true;
 
         // Block Names
-        const string camName = "DAGGER Targetting Cam";
+        const string camName = "Main Targetting Cam";
         const string cockpitName = "Control Seat";
-        const string textpanelName = "DAGGER Text Panel";
+        const string textpanelName = "GFS Text Panel";
 
         const string cameraGroupName = "Targetting Cams";
 
