@@ -1,11 +1,11 @@
-DAGGER will be the main tracking system.
+GFS will be the main tracking system.
 It will be in its own programmable block:
 
 Features:
 Tracking ability for both moving and stationary targets
 It can: Active track, singular point locating, get points from GPS or Vector3 coordinates put into the main prompt
 It will be able to use multiple cameras to speed up raycasting
-Be able to get targetting information from intergrid communication with other allied DAGGER points as long as it is enabled on both
+Be able to get targetting information from intergrid communication with other allied GFS points as long as it is enabled on both
 
 Alt features:
 Customisable max range
