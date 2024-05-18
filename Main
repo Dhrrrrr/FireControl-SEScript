@@ -2,11 +2,15 @@
 
         // Main
         static bool trackGrids = true;
-        static double maxRange = 5000;
+        static double maxRange = 15000;
+        static double maxTrackingRange = 5000;
 
-        const float extraRange = 1.1f;
+        float extraRange = 1.1f;
+
         const bool useAcceleration = false;
-        const bool useHitPosition = true;
+
+        const bool useHitPositionGrid = true;
+        const bool useHitPositionTracking = false;
 
         // Block Names
         const string camName = "Main Targetting Cam";
@@ -39,6 +43,8 @@
 
         // time for single tick
         const double singleTickMutlipler = 1 / 60;
+
+        const string IDENTIFIERCODE = "GFS";
 
         public Program()
         {
@@ -106,8 +112,18 @@
                 if (targettedGrid != null)
                 {
                     targettedGrid.CalculateVelocity();
-                    
-                    currentTarget = targettedGrid.Position;
+
+                    if (useHitPositionGrid)
+                    {
+                        currentTarget = targettedGrid.FinalPos;
+
+                    }
+                    else
+                    {
+                        currentTarget = targettedGrid.Position;
+
+                    }
+
                     currentVelocity = targettedGrid.Velocity;
                 }
             } // Purge targetted grid if still existing
@@ -126,7 +142,7 @@
             Echo(activelyTracking.ToString());
 
             // Print info to custom data for other objects to use
-            Me.CustomData = "DAGGER" + "|" + currentTarget + "," + currentVelocity;
+            Me.CustomData = IDENTIFIERCODE + "|" + currentTarget + "," + currentVelocity;
         }
 
         /// <summary>
@@ -152,12 +168,12 @@
             {
 
                 // If grid tracking is enabled
-                if (trackGrids)
+                if (activelyTracking)
                 {
                     //If enabled and the target hit is a grid, then create new target grid
                     if (rayInfo.Type == MyDetectedEntityType.LargeGrid || rayInfo.Type == MyDetectedEntityType.SmallGrid)
                     {
-                        targettedGrid = new TargetGrid(rayInfo, useAcceleration, useHitPosition);
+                        targettedGrid = new TargetGrid(rayInfo, useAcceleration, useHitPositionGrid, useHitPositionTracking);
                         currentTarget = targettedGrid.Position;
                         currentVelocity = targettedGrid.Velocity;
 
@@ -182,12 +198,12 @@
             if (targettedGrid != null)
             {
                 // Get distance from target
-                Vector3D direction = targettedGrid.Position - mainCamera.WorldMatrix.Translation;
+                Vector3D direction = (targettedGrid.Position - mainCamera.WorldMatrix.Translation) * extraRange;
                 double distance = direction.Length() * extraRange;
                 float rayCone = mainCamera.RaycastConeLimit;
 
                 // if goes over max distance then break
-                if (distance > maxRange)
+                if (distance > maxTrackingRange)
                 {
                     return;
                 }
@@ -222,7 +238,7 @@
                         {
                             if (camera.CanScan(distance))
                             {
-                                RunTargettingCast(camera, targettedGrid.Position);
+                                RunTargettingCast(camera, targettedGrid.Position + direction);
                                 sentRay = true;
                                 break;
                             }
@@ -243,7 +259,7 @@
                     // Use extra range in case target is out of range, and only send out the raycast if there is avaiable length
                     if (mainCamera.CanScan(distance))
                     {
-                        RunTargettingCast(mainCamera, targettedGrid.Position);
+                        RunTargettingCast(mainCamera, targettedGrid.Position + direction);
                     }
                 }
             }
@@ -256,7 +272,6 @@
         /// <param name="point">Point of target</param>
         public void RunTargettingCast(IMyCameraBlock cam, Vector3D point)
         {
-            // Send raycast to position
             MyDetectedEntityInfo rayInfo = cam.Raycast(point);
 
             // If the raycast hit the current targetted grid, recalculate its position with new info, and return;
@@ -408,6 +423,7 @@
             public Vector3D Position { get { return _position; } set { _position = value; } }
             public Vector3D Velocity { get { return _velocity; } set { _velocity = value; } }
             public Vector3D Acceleration { get { return _acceleration; } set { _acceleration = value; } }
+            public Vector3D FinalPos { get { return finalPos; } }
 
             // Interals
             private Vector3D _position;
@@ -421,15 +437,51 @@
 
             // Optional variables for targetting
             private bool useAcceleration;
-            private bool useHitposition;
+            private bool useHitpositionGrid;
+            private bool useHitpositionTracking;
+
+            // Used for locating a point relative to the grid
+            private Vector3D relativeGridVector;
+            private Vector3D finalPos;
+            private Vector3D truePosAdd;
+
 
             /// <summary>
             /// Generate a new targetted grid
             /// </summary>
             /// <param name="raycastInfo">Raycast hit for the targetted grid to pull info from</param>
-            public TargetGrid(MyDetectedEntityInfo raycastInfo, bool accelerationEnabled, bool hitpositionEnabled)
+            public TargetGrid(MyDetectedEntityInfo raycastInfo, bool accelerationEnabled, bool hitpositionGridEnabled, bool hitpositionTrackingEnbaled)
             {
-                _position = raycastInfo.Position;
+                // Decide position if hitposition is enabled or not
+                if (hitpositionTrackingEnbaled)
+                {
+                    _position = raycastInfo.HitPosition.Value;
+
+                }
+                else
+                {
+                    _position = raycastInfo.Position;
+
+                }
+
+                // Saves relative grid position if enabled
+                if (hitpositionGridEnabled)
+                {
+                    Vector3D dif = raycastInfo.HitPosition.Value - raycastInfo.Position;
+
+                    Vector3D forward = raycastInfo.Orientation.Forward;
+                    Vector3D left = raycastInfo.Orientation.Left;
+                    Vector3D up = raycastInfo.Orientation.Up;
+
+                    double x = Vector3D.ProjectOnVector(ref dif, ref forward).Length();
+                    double y = Vector3D.ProjectOnVector(ref dif, ref up).Length();
+                    double z = Vector3D.ProjectOnVector(ref dif, ref left).Length();
+
+                    relativeGridVector = new Vector3D(x, y, z);
+                    finalPos = raycastInfo.Position + dif;
+                    truePosAdd = dif;
+                }
+
                 _velocity = raycastInfo.Velocity;
                 _acceleration = Vector3D.Zero;
 
@@ -438,7 +490,8 @@
                 id = raycastInfo.EntityId;
 
                 useAcceleration = accelerationEnabled;
-                useHitposition = hitpositionEnabled;
+                useHitpositionGrid = hitpositionGridEnabled;
+                useHitpositionTracking = hitpositionTrackingEnbaled;
             }
 
             /// <summary>
@@ -455,7 +508,29 @@
                 }
 
                 _velocity = raycastInfo.Velocity;
-                _position = raycastInfo.Position;
+
+                // Check what type of overwriting it is using
+                if (useHitpositionTracking)
+                {
+                    _position = raycastInfo.HitPosition.Value;
+
+                }
+                else
+                {
+                    _position = raycastInfo.Position;
+
+                }
+
+                // Check if its using specific position, and if so track
+                if (useHitpositionGrid)
+                {
+                    Vector3D forward = raycastInfo.Orientation.Forward * relativeGridVector.X;
+                    Vector3D left = raycastInfo.Orientation.Left * relativeGridVector.Z;
+                    Vector3D up = raycastInfo.Orientation.Up * relativeGridVector.Y;
+
+                    truePosAdd = forward + left + up;
+                    finalPos = raycastInfo.Position + truePosAdd;
+                }
             }
 
             /// <summary>
@@ -472,6 +547,12 @@
                 }
 
                 _position += new Vector3D(_velocity.X / multiplier, _velocity.Y / multiplier, _velocity.Z / multiplier); ;
+
+                if (useHitpositionGrid)
+                {
+                    finalPos = _position + truePosAdd;
+
+                }
             }
 
             /// <summary>
