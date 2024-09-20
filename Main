@@ -5,7 +5,7 @@
         static double maxRange = 15000;
         static double maxTrackingRange = 5000;
 
-        float extraRange = 1.1f;
+        float extraRange = 200;
 
         const bool useAcceleration = false;
 
@@ -139,7 +139,7 @@
             }
 
             // Echo the tracking variable so the user can quickly tell if tracking is enabled
-            Echo(activelyTracking.ToString());
+            Echo("GFS: " + activelyTracking.ToString());
 
             // Print info to custom data for other objects to use
             Me.CustomData = IDENTIFIERCODE + "|" + currentTarget + "," + currentVelocity;
@@ -198,7 +198,8 @@
             if (targettedGrid != null)
             {
                 // Get distance from target
-                Vector3D direction = (targettedGrid.Position - mainCamera.WorldMatrix.Translation) * extraRange;
+                Vector3D directionVec = targettedGrid.Position - mainCamera.WorldMatrix.Translation;
+                Vector3D direction = directionVec + (directionVec.Normalized() * extraRange);
                 double distance = direction.Length() * extraRange;
                 float rayCone = mainCamera.RaycastConeLimit;
 
@@ -372,8 +373,16 @@
         {
             string mainText = "";
 
+            double dist = 0;
+
+            if (currentTarget != Vector3D.Zero)
+            {
+                dist = (currentTarget - cockpit.GetPosition()).Length();
+            }
+
             mainText += "Target Position: " + currentTarget + Environment.NewLine;
             mainText += "Target Velocity: " + currentVelocity + Environment.NewLine;
+            mainText += "Target Distance: " + dist + Environment.NewLine;
             mainText += "Tracking Enabled: " + activelyTracking + Environment.NewLine + Environment.NewLine;
 
             if(targettedGrid != null)
