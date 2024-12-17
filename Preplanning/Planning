@@ -21,10 +21,11 @@ Other scripts will automatically locate this script on the grid and automaticall
 
 Achievement List:
 #Tracking Ability
+Multiple Live Target Tracking
 #Singular Point from camera
 #GPS and Vector3 Input
 #Multiple camera usage
 Intergrid communication
 #Customisable max Range
 #Textpanel output 
-  #Add grid info from targetting in textpanel
+#Add grid info from targetting in textpanel
